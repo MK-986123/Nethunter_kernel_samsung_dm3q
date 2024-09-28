@@ -1,4 +1,4 @@
-name: Kernel Build with Ubuntu Repository Toolchains
+name: Kernel Build with Fixes for Missing Files and Kbuild Errors
 
 on:
   push:
@@ -40,9 +40,9 @@ jobs:
         # Install kconfiglib for menuconfig support
         pip3 install kconfiglib
 
-    - name: Create custom kernel config for NetHunter
+    - name: Create custom kernel config for NetHunter with logging disabled
       run: |
-        # Create a custom configuration file for NetHunter features
+        # Disable performance events (perf logging) and add NetHunter configs
         echo "CONFIG_USB_GADGET=y" >> nethunter_defconfig
         echo "CONFIG_HID_GADGET=y" >> nethunter_defconfig
         echo "CONFIG_USB_F_ACM=y" >> nethunter_defconfig
@@ -54,6 +54,12 @@ jobs:
         echo "CONFIG_BT_RFCOMM_TTY=y" >> nethunter_defconfig
         echo "CONFIG_EXT4_FS=y" >> nethunter_defconfig
         echo "CONFIG_VFAT_FS=y" >> nethunter_defconfig
+        echo "CONFIG_PERF_EVENTS=n" >> nethunter_defconfig
+
+    - name: Patch Kbuild for qcacld-3.0 to fix patsubst error
+      run: |
+        # Replace the faulty line with a corrected patsubst function
+        sed -i 's/$(patsubst %.c,%.o,$(wildcard ./*.c))/$(patsubst %.c,%.o,$(wildcard ./%.c))/' drivers/staging/qcacld-3.0/Kbuild
 
     - name: Thorough Cleanup of Source Tree
       run: |
