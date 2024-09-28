@@ -13,18 +13,23 @@ jobs:
     runs-on: ubuntu-latest  # The environment to run on (Ubuntu)
 
     steps:
-    - name: Checkout source code
-      uses: actions/checkout@v3  # This checks out the repository source code
+    - name: Checkout Nethunter kernel source
+      uses: actions/checkout@v3
+      with:
+        repository: MK-986123/Nethunter_kernel_samsung_dm3q
+        ref: WIP
+
+    - name: Checkout AnyKernel3 source
+      uses: actions/checkout@v3
+      with:
+        repository: HardcodedCat/AnyKernel3
+        ref: WIP
+        path: AnyKernel3
 
     - name: Set up build environment
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential clang llvm lld git bc bison flex libncurses5-dev curl zip
-
-    - name: Clone AnyKernel3
-      run: |
-        git clone -b WIP https://github.com/HardcodedCat/AnyKernel3.git
-        ls -al AnyKernel3  # Verifies the AnyKernel3 directory was cloned
 
     - name: Build the kernel
       run: |
