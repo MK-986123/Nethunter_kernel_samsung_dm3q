@@ -1,4 +1,4 @@
-name: Kernel Build with WeebX-Clang
+name: Kernel Build with Ubuntu Repository Toolchains
 
 on:
   push:
@@ -32,37 +32,51 @@ jobs:
 
     - name: Set up build environment
       run: |
+        # Update the system and install required build tools
         sudo apt-get update
         sudo apt-get install -y build-essential git bc bison flex libncurses5-dev curl zip libssl-dev libelf-dev python3-pip
+        # Install the toolchains from the Ubuntu repository
+        sudo apt-get install -y clang llvm lld gcc-aarch64-linux-gnu
+        # Install kconfiglib for menuconfig support
         pip3 install kconfiglib
 
-    - name: Download WeebX-Clang toolchain
+    - name: Create custom kernel config for NetHunter
       run: |
-        # Download and extract WeebX-Clang from the GitHub release
-        wget https://github.com/XSans0/WeebX-Clang/releases/download/WeebX-Clang-19.1.0-release/WeebX-Clang-19.1.0.tar.gz
-        tar -xvzf WeebX-Clang-19.1.0.tar.gz
-        # Set the toolchain path
-        export WEEBX_CLANG=$(pwd)/WeebX-Clang
-        export PATH=$WEEBX_CLANG/bin:$PATH
+        # Create a custom configuration file for NetHunter features
+        echo "CONFIG_USB_GADGET=y" >> nethunter_defconfig
+        echo "CONFIG_HID_GADGET=y" >> nethunter_defconfig
+        echo "CONFIG_USB_F_ACM=y" >> nethunter_defconfig
+        echo "CONFIG_USB_F_HID=y" >> nethunter_defconfig
+        echo "CONFIG_CFG80211=y" >> nethunter_defconfig
+        echo "CONFIG_MAC80211=y" >> nethunter_defconfig
+        echo "CONFIG_BT=y" >> nethunter_defconfig
+        echo "CONFIG_BT_RFCOMM=y" >> nethunter_defconfig
+        echo "CONFIG_BT_RFCOMM_TTY=y" >> nethunter_defconfig
+        echo "CONFIG_EXT4_FS=y" >> nethunter_defconfig
+        echo "CONFIG_VFAT_FS=y" >> nethunter_defconfig
 
     - name: Configure kernel for NetHunter
       run: |
-        # Export environment variables for WeebX-Clang toolchain
+        # Export environment variables for Clang and cross-compiler
         export ARCH=arm64
-        export CROSS_COMPILE=$WEEBX_CLANG/bin/aarch64-linux-gnu-
-        export KERNEL_SOURCE=https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q
+        export CROSS_COMPILE=aarch64-linux-gnu-  # Use aarch64 cross-compiler from Ubuntu repository
+        export CC=clang
+        export LD=ld.lld
 
         # Clean any previous build artifacts
         make clean && make mrproper
 
-        # Check the kernel configuration and enable features for NetHunter
+        # Merge the custom configuration with the default kalama-gki_defconfig
         make kalama-gki_defconfig O=out
-        make menuconfig O=out  # Optionally add kernel features if needed (HID, USB Gadget, Bluetooth, etc.)
+        scripts/kconfig/merge_config.sh out/.config nethunter_defconfig
 
-    - name: Build the kernel with WeebX-Clang
+        # Optionally, if manual menuconfig is needed to inspect, uncomment the next line
+        # make menuconfig O=out
+
+    - name: Build the kernel with Clang and aarch64 cross-compiler
       run: |
-        # Build the kernel using WeebX-Clang and its cross-compiler
-        make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="WeebX-Clang $(clang --version)" O=out
+        # Build the kernel using Clang, LLD, and aarch64 cross-compiler
+        make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="Clang $(clang --version)" O=out
 
     - name: Package the kernel with AnyKernel3
       run: |
