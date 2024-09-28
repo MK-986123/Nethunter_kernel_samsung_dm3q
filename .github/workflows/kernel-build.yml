@@ -1,4 +1,4 @@
-name: Kernel Build
+name: Kernel Build with Samsung Toolchain
 
 on:
   push:
@@ -34,21 +34,37 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential clang llvm lld git bc bison flex libncurses5-dev curl zip
+        # Install additional dependencies required for kernel building
+        sudo apt-get install -y libssl-dev libelf-dev libncurses-dev python3-pip
+        pip3 install kconfiglib
 
-    - name: Build the kernel
+    - name: Download Samsung toolchain
       run: |
-        # Export environment variables
+        # Download and extract Samsung's ARM64 GCC toolchain
+        wget https://opensource.samsung.com/uploadFile/genericFile/2022/01/20/Samsung_Exynos_ARM64_Toolchain.tar.gz
+        tar -xvzf Samsung_Exynos_ARM64_Toolchain.tar.gz
+        # Set the toolchain path
+        export SAMSUNG_TOOLCHAIN=$(pwd)/Samsung_Exynos_ARM64_Toolchain
+
+    - name: Configure kernel for NetHunter
+      run: |
+        # Export environment variables for Samsung toolchain
         export ARCH=arm64
+        export CROSS_COMPILE=$SAMSUNG_TOOLCHAIN/bin/aarch64-linux-android-  # Use Samsung's toolchain
         export KERNEL_SOURCE=https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q
-        export CROSS_COMPILE=aarch64-linux-gnu-
         export CLANG_PATH=$(pwd)/clang/bin
         export PATH=$CLANG_PATH:$PATH
 
         # Clean any previous build artifacts
         make clean && make mrproper
 
-        # Build the kernel using the specified config
+        # Check the kernel configuration and enable features for NetHunter
         make kalama-gki_defconfig O=out
+        make menuconfig O=out  # Optionally add kernel features if needed (HID, USB Gadget, Bluetooth, etc.)
+
+    - name: Build the kernel with Samsung toolchain
+      run: |
+        # Build the kernel using Samsung's toolchain and clang
         make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="Clang $(clang --version)" O=out
 
     - name: Package the kernel with AnyKernel3
