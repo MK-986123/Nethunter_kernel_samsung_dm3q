@@ -1,4 +1,4 @@
-name: Kernel Build with Samsung Toolchain
+name: Kernel Build with ARM Toolchain and NetHunter Patches
 
 on:
   push:
@@ -38,19 +38,26 @@ jobs:
         sudo apt-get install -y libssl-dev libelf-dev libncurses-dev python3-pip
         pip3 install kconfiglib
 
-    - name: Download Samsung toolchain
+    - name: Download ARM toolchain
       run: |
-        # Download and extract Samsung's ARM64 GCC toolchain
-        wget https://opensource.samsung.com/uploadFile/genericFile/2022/01/20/Samsung_Exynos_ARM64_Toolchain.tar.gz
-        tar -xvzf Samsung_Exynos_ARM64_Toolchain.tar.gz
+        # Download and extract ARM's AArch64 toolchain
+        wget https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/aarch64-none-elf/gcc-arm-12.2-2022.12-x86_64-aarch64-none-elf.tar.xz
+        tar -xvf gcc-arm-12.2-2022.12-x86_64-aarch64-none-elf.tar.xz
         # Set the toolchain path
-        export SAMSUNG_TOOLCHAIN=$(pwd)/Samsung_Exynos_ARM64_Toolchain
+        export ARM_TOOLCHAIN=$(pwd)/gcc-arm-12.2-2022.12-x86_64-aarch64-none-elf
+
+    - name: Apply NetHunter Patches
+      run: |
+        # Apply patches for USB HID, WiFi injection, Bluetooth RFCOMM, and other NetHunter features
+        git apply patches/usb_hid_gadget.patch
+        git apply patches/wifi_injection.patch
+        git apply patches/bluetooth_rfcomm.patch
 
     - name: Configure kernel for NetHunter
       run: |
-        # Export environment variables for Samsung toolchain
+        # Export environment variables for ARM toolchain
         export ARCH=arm64
-        export CROSS_COMPILE=$SAMSUNG_TOOLCHAIN/bin/aarch64-linux-android-  # Use Samsung's toolchain
+        export CROSS_COMPILE=$ARM_TOOLCHAIN/bin/aarch64-none-elf-  # Use ARM's toolchain
         export KERNEL_SOURCE=https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q
         export CLANG_PATH=$(pwd)/clang/bin
         export PATH=$CLANG_PATH:$PATH
@@ -62,9 +69,9 @@ jobs:
         make kalama-gki_defconfig O=out
         make menuconfig O=out  # Optionally add kernel features if needed (HID, USB Gadget, Bluetooth, etc.)
 
-    - name: Build the kernel with Samsung toolchain
+    - name: Build the kernel with ARM toolchain
       run: |
-        # Build the kernel using Samsung's toolchain and clang
+        # Build the kernel using ARM's toolchain and clang
         make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="Clang $(clang --version)" O=out
 
     - name: Package the kernel with AnyKernel3
