@@ -58,8 +58,8 @@ jobs:
 
     - name: Patch Kbuild for qcacld-3.0 to fix patsubst error
       run: |
-        # Replace the faulty line with a corrected patsubst function
-        sed -i 's/$(patsubst %.c,%.o,$(wildcard ./*.c))/$(patsubst %.c,%.o,$(wildcard ./%.c))/' drivers/staging/qcacld-3.0/Kbuild
+        # Use a different delimiter (|) and ensure that the slashes are escaped correctly
+        sed -i 's|$(patsubst %.c,%.o,$(wildcard ./*.c))|$(patsubst %.c,%.o,$(wildcard ./%.c))|' drivers/staging/qcacld-3.0/Kbuild
 
     - name: Thorough Cleanup of Source Tree
       run: |
@@ -78,43 +78,4 @@ jobs:
       run: |
         # Export environment variables for Clang and cross-compiler
         export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-  # Use aarch64 cross-compiler from Ubuntu repository
-        export CC=clang
-        export LD=ld.lld
-
-        # Use the kalama_gki_defconfig or stock-dm3q_defconfig based on availability
-        if [ -f arch/arm64/configs/vendor/kalama_gki_defconfig ]; then
-          make ARCH=arm64 vendor/kalama_gki_defconfig O=out
-        elif [ -f arch/arm64/configs/stock-dm3q_defconfig ]; then
-          make ARCH=arm64 stock-dm3q_defconfig O=out
-        else
-          echo "No valid defconfig found!"
-          exit 1
-        fi
-
-        # Merge the custom configuration with the chosen defconfig
-        scripts/kconfig/merge_config.sh out/.config nethunter_defconfig
-
-        # Optionally, if manual menuconfig is needed to inspect, uncomment the next line
-        # make menuconfig O=out
-
-    - name: Build the kernel with Clang and aarch64 cross-compiler
-      run: |
-        # Build the kernel using Clang, LLD, and aarch64 cross-compiler
-        make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="Clang $(clang --version)" O=out
-
-    - name: Package the kernel with AnyKernel3
-      run: |
-        # Copy compiled kernel to AnyKernel3 directory
-        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        
-        # Create a flashable zip
-        cd AnyKernel3
-        zip -r9 kernel.zip ./*
-        cd ..
-
-    - name: Upload kernel.zip artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: kernel.zip
-        path: AnyKernel3/kernel.zip
+        export CROSS_COMPILE=aarch64-linux-gnu-  # Us
