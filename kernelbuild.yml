@@ -1,0 +1,56 @@
+name: Kernel Build
+
+on:
+  push:
+    branches:
+      - WIP  # Triggers the action on pushes to the WIP branch
+  pull_request:
+    branches:
+      - WIP  # Optionally build on pull requests to the WIP branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # The environment to run on (Ubuntu)
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v3  # This checks out the repository source code
+
+    - name: Set up build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang llvm lld git bc bison flex libncurses5-dev curl zip
+
+    - name: Clone AnyKernel3
+      run: |
+        git clone -b WIP https://github.com/HardcodedCat/AnyKernel3.git
+        ls -al AnyKernel3  # Verifies the AnyKernel3 directory was cloned
+
+    - name: Build the kernel
+      run: |
+        # Export environment variables
+        export ARCH=arm64
+        export KERNEL_SOURCE=https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CLANG_PATH=$(pwd)/clang/bin
+        export PATH=$CLANG_PATH:$PATH
+
+        # Build the kernel with specified optimizations
+        make kalama-gki_defconfig
+        make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="Clang $(clang --version)" O=out
+
+    - name: Package the kernel with AnyKernel3
+      run: |
+        # Copy compiled kernel to AnyKernel3 directory
+        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        
+        # Create a flashable zip
+        cd AnyKernel3
+        zip -r9 kernel.zip ./*
+        cd ..
+
+    - name: Upload kernel.zip artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: kernel.zip
+        path: AnyKernel3/kernel.zip
