@@ -66,8 +66,10 @@ jobs:
         # Clean any previous build artifacts
         make clean && make mrproper
 
+        # Use the correct path for the vendor-specific config
+        make ARCH=arm64 path/to/arch/arm64/configs/vendor/kalama-gki_defconfig O=out
+        
         # Merge the custom configuration with the default kalama-gki_defconfig
-        make kalama-gki_defconfig O=out
         scripts/kconfig/merge_config.sh out/.config nethunter_defconfig
 
         # Optionally, if manual menuconfig is needed to inspect, uncomment the next line
