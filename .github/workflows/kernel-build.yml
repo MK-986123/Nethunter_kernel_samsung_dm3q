@@ -55,6 +55,19 @@ jobs:
         echo "CONFIG_EXT4_FS=y" >> nethunter_defconfig
         echo "CONFIG_VFAT_FS=y" >> nethunter_defconfig
 
+    - name: Thorough Cleanup of Source Tree
+      run: |
+        # Ensure that the source tree is cleaned up properly
+        make mrproper
+
+        # Force delete the 'out' directory and related artifacts if it exists
+        rm -rf out
+        rm -rf include/config
+        rm -rf include/generated
+
+        # Clean again just to ensure all remnants are gone
+        make clean
+
     - name: Configure kernel for NetHunter
       run: |
         # Export environment variables for Clang and cross-compiler
@@ -62,9 +75,6 @@ jobs:
         export CROSS_COMPILE=aarch64-linux-gnu-  # Use aarch64 cross-compiler from Ubuntu repository
         export CC=clang
         export LD=ld.lld
-
-        # Clean any previous build artifacts
-        make clean && make mrproper
 
         # Use the kalama_gki_defconfig or stock-dm3q_defconfig based on availability
         if [ -f arch/arm64/configs/vendor/kalama_gki_defconfig ]; then
