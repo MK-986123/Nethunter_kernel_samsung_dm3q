@@ -17,14 +17,18 @@ jobs:
       uses: actions/checkout@v3
       with:
         repository: MK-986123/Nethunter_kernel_samsung_dm3q
-        ref: WIP
+        ref: WIP  # Using 'WIP' branch for Nethunter kernel
+        fetch-depth: 0  # Ensures full history is fetched
+        clean: true  # Cleans any previous files
 
     - name: Checkout AnyKernel3 source
       uses: actions/checkout@v3
       with:
         repository: MK-986123/AnyKernel3
-        ref: WIP
+        ref: master  # Using 'master' branch for AnyKernel3
         path: AnyKernel3
+        fetch-depth: 0  # Ensures full history is fetched
+        clean: true  # Cleans any previous files
 
     - name: Set up build environment
       run: |
