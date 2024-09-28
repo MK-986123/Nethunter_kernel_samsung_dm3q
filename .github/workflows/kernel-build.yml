@@ -22,7 +22,7 @@ jobs:
     - name: Checkout AnyKernel3 source
       uses: actions/checkout@v3
       with:
-        repository: HardcodedCat/AnyKernel3
+        repository: MK-986123/AnyKernel3
         ref: WIP
         path: AnyKernel3
 
