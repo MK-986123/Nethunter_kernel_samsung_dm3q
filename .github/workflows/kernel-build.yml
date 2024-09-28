@@ -1,4 +1,4 @@
-name: Kernel Build with ARM Toolchain and NetHunter Patches
+name: Kernel Build with WeebX-Clang and NetHunter Patches
 
 on:
   push:
@@ -33,18 +33,17 @@ jobs:
     - name: Set up build environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential clang llvm lld git bc bison flex libncurses5-dev curl zip
-        # Install additional dependencies required for kernel building
-        sudo apt-get install -y libssl-dev libelf-dev libncurses-dev python3-pip
+        sudo apt-get install -y build-essential git bc bison flex libncurses5-dev curl zip libssl-dev libelf-dev python3-pip
         pip3 install kconfiglib
 
-    - name: Download ARM toolchain
+    - name: Download WeebX-Clang toolchain
       run: |
-        # Download and extract ARM's AArch64 toolchain
-        wget https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/aarch64-none-elf/gcc-arm-12.2-2022.12-x86_64-aarch64-none-elf.tar.xz
-        tar -xvf gcc-arm-12.2-2022.12-x86_64-aarch64-none-elf.tar.xz
+        # Download and extract WeebX-Clang from the GitHub release
+        wget https://github.com/XSans0/WeebX-Clang/releases/download/WeebX-Clang-19.1.0-release/WeebX-Clang-19.1.0.tar.gz
+        tar -xvzf WeebX-Clang-19.1.0.tar.gz
         # Set the toolchain path
-        export ARM_TOOLCHAIN=$(pwd)/gcc-arm-12.2-2022.12-x86_64-aarch64-none-elf
+        export WEEBX_CLANG=$(pwd)/WeebX-Clang
+        export PATH=$WEEBX_CLANG/bin:$PATH
 
     - name: Apply NetHunter Patches
       run: |
@@ -55,12 +54,10 @@ jobs:
 
     - name: Configure kernel for NetHunter
       run: |
-        # Export environment variables for ARM toolchain
+        # Export environment variables for WeebX-Clang toolchain
         export ARCH=arm64
-        export CROSS_COMPILE=$ARM_TOOLCHAIN/bin/aarch64-none-elf-  # Use ARM's toolchain
+        export CROSS_COMPILE=$WEEBX_CLANG/bin/aarch64-linux-gnu-
         export KERNEL_SOURCE=https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q
-        export CLANG_PATH=$(pwd)/clang/bin
-        export PATH=$CLANG_PATH:$PATH
 
         # Clean any previous build artifacts
         make clean && make mrproper
@@ -69,10 +66,10 @@ jobs:
         make kalama-gki_defconfig O=out
         make menuconfig O=out  # Optionally add kernel features if needed (HID, USB Gadget, Bluetooth, etc.)
 
-    - name: Build the kernel with ARM toolchain
+    - name: Build the kernel with WeebX-Clang
       run: |
-        # Build the kernel using ARM's toolchain and clang
-        make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="Clang $(clang --version)" O=out
+        # Build the kernel using WeebX-Clang and its cross-compiler
+        make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="WeebX-Clang $(clang --version)" O=out
 
     - name: Package the kernel with AnyKernel3
       run: |
