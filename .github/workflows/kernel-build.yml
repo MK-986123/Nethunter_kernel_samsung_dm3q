@@ -30,32 +30,18 @@ jobs:
         fetch-depth: 0
         clean: true
 
-    - name: Set up toolchain from Samsung SM-S901E repo
+    - name: Set up Samsung SM-S901E toolchain
       run: |
+        # Clone the Samsung toolchain repo
         git clone https://github.com/iamimmanuelraj/toolchain_samsung_SM_S901E.git
-        export PATH=$PATH:$PWD/toolchain_samsung_SM_S901E/prebuilts/clang/host/linux-x86/clang-r416183b/bin
-        export CROSS_COMPILE=aarch64-linux-gnu-
+
+        # Export paths for the toolchain
+        export TOOLCHAIN_DIR=$PWD/toolchain_samsung_SM_S901E/prebuilts/clang/host/linux-x86/clang-r416183b/bin
+        export PATH=$PATH:$TOOLCHAIN_DIR
+        export CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu-
 
     - name: Configure kernel for NetHunter
       run: |
         export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        make ARCH=arm64 vendor/kalama_gki_defconfig O=out
-        scripts/kconfig/merge_config.sh out/.config nethunter_defconfig
 
-    - name: Build the kernel
-      run: |
-        make -j$(nproc) CC=clang CROSS_COMPILE=aarch64-linux-gnu- O=out
-
-    - name: Package the kernel with AnyKernel3
-      run: |
-        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        cd AnyKernel3
-        zip -r9 kernel.zip ./*
-        cd ..
-
-    - name: Upload kernel.zip artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: kernel.zip
-        path: AnyKernel3/kernel.zip
+        # Use the kalama_gki_defconfig or stock-dm3q_defconfig b
