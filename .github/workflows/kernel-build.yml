@@ -44,4 +44,37 @@ jobs:
       run: |
         export ARCH=arm64
 
-        # Use the kalama_gki_defconfig or stock-dm3q_defconfig b
+        # Use the kalama_gki_defconfig or stock-dm3q_defconfig based on availability
+        if [ -f arch/arm64/configs/vendor/kalama_gki_defconfig ]; then
+          make ARCH=arm64 vendor/kalama_gki_defconfig O=out
+        elif [ -f arch/arm64/configs/stock-dm3q_defconfig ]; then
+          make ARCH=arm64 stock-dm3q_defconfig O=out
+        else
+          echo "No valid defconfig found!"
+          exit 1
+        fi
+
+    - name: Build the kernel with Samsung toolchain
+      run: |
+        make -j$(nproc) CC=clang CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu- O=out
+
+    - name: Package the kernel with AnyKernel3
+      run: |
+        # Check if the output kernel image exists
+        if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        else
+          echo "Error: Kernel image not found!"
+          exit 1
+        fi
+
+        # Create the zip file
+        cd AnyKernel3
+        zip -r9 kernel.zip ./*
+        cd ..
+
+    - name: Upload kernel.zip artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: kernel.zip
+        path: AnyKernel3/kernel.zip
