@@ -47,15 +47,6 @@ jobs:
       run: |
         make mrproper || true  # This step is allowed to fail if there are issues.
 
-    - name: Disable logging features (fix perflog.h error)
-      run: |
-        echo "CONFIG_ANDROID_LOGGING=n" >> out/.config
-        echo "CONFIG_KPERFMON=n" >> out/.config
-
-    - name: Fix patsubst error in Kbuild
-      run: |
-        sed -i 's/patsubst.../correct_patsubst_syntax/' drivers/staging/qcacld-3.0/Kbuild
-
     - name: Configure kernel for NetHunter
       run: |
         export ARCH=arm64
@@ -67,6 +58,15 @@ jobs:
           echo "Error: No valid defconfig found!"
           exit 1
         fi
+
+    - name: Disable logging features (fix perflog.h error)
+      run: |
+        echo "CONFIG_ANDROID_LOGGING=n" >> out/.config
+        echo "CONFIG_KPERFMON=n" >> out/.config
+
+    - name: Fix patsubst error in Kbuild
+      run: |
+        sed -i 's/patsubst.../correct_patsubst_syntax/' drivers/staging/qcacld-3.0/Kbuild
 
     - name: Build the kernel with Samsung toolchain
       run: |
