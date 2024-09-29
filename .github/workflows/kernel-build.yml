@@ -46,6 +46,11 @@ jobs:
         export CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu-
         export LD=$TOOLCHAIN_DIR/ld.lld  # Use LLVM's linker if present
 
+    - name: Clean the source tree
+      run: |
+        # Clean the kernel source tree before building to avoid arch/x86 issues
+        make mrproper
+
     - name: Configure kernel for NetHunter
       run: |
         export ARCH=arm64
