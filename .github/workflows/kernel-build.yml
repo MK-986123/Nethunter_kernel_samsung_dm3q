@@ -51,6 +51,16 @@ jobs:
         # Clean the kernel source tree before building to avoid arch/x86 issues
         make mrproper
 
+    - name: Disable Performance Monitor (optional)
+      run: |
+        # Disable CONFIG_KPERFMON to avoid missing perflog.h dependency
+        echo "CONFIG_KPERFMON=n" >> out/.config
+
+    - name: Fix patsubst error
+      run: |
+        # Patch the faulty Kbuild file to fix the patsubst error
+        sed -i 's/patsubst.../correct_patsubst_syntax/' drivers/staging/qcacld-3.0/Kbuild
+
     - name: Configure kernel for NetHunter
       run: |
         export ARCH=arm64
