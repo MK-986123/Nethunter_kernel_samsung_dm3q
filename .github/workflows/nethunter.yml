@@ -16,8 +16,9 @@ jobs:
     - name: Install prerequisites
       run: |
         sudo apt-get update
-        sudo apt-get install -y gdown
         sudo apt-get install -y build-essential bc libssl-dev libncurses-dev bison flex libelf-dev ccache
+        python3 -m pip install --upgrade pip
+        python3 -m pip install gdown
 
     - name: Download Samsung Toolchain from Google Drive
       run: |
