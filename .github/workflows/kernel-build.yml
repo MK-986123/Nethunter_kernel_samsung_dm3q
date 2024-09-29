@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      DEFCONFIG: "kalama-gki_defconfig"
+      DEFCONFIG: "vendor/kalama-gki_defconfig"  # Adjusted the path to sub vendor folder
       GCC_PATH: "/opt/gcc-arm"
       BUILD_OUTPUT: "output/"
     
@@ -29,10 +29,6 @@ jobs:
           sudo apt-get install -y bc bison flex libssl-dev build-essential \
           ccache libncurses5-dev libelf-dev libudev-dev libpci-dev wget curl git \
           xz-utils fakeroot rsync dwarves python3
-
-      - name: Install gdown
-        run: |
-          pip install gdown
 
       - name: Download Toolchain from Google Drive
         run: |
@@ -67,4 +63,48 @@ jobs:
         run: |
           ls ${BUILD_OUTPUT}
           if [ ! -f "${BUILD_OUTPUT}/Image.gz" ]; then
-            echo "Error: Kernel image not
+            echo "Error: Kernel image not found!"
+            exit 1
+          fi
+
+      - name: Download and Integrate AnyKernel3
+        run: |
+          echo "Cloning AnyKernel3 repository"
+          git clone https://github.com/MK-986123/AnyKernel3.git ./AnyKernel3
+          cp ${BUILD_OUTPUT}/Image.gz ./AnyKernel3/zImage
+          cd ./AnyKernel3
+          zip -r9 kernel-s23ultra.zip *
+          echo "Kernel packaged with AnyKernel3"
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Kernel Image
+          path: ${BUILD_OUTPUT}/Image.gz
+
+  error-handling:
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Retry with Alternate Toolchain
+        run: |
+          echo "Retrying with alternate toolchain..."
+          export ALT_GCC_PATH=/opt/alt-gcc-arm
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9.git ${ALT_GCC_PATH}
+          export PATH=${ALT_GCC_PATH}/bin:$PATH
+
+      - name: Retry Build
+        working-directory: ./kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=${ALT_GCC_PATH}/bin/aarch64-linux-android-
+          make -j$(nproc) O=${BUILD_OUTPUT} ARCH=arm64 CROSS_COMPILE=${ALT_GCC_PATH}/bin/aarch64-linux-android-
+
+      - name: Verify Retry Build
+        run: |
+          ls ${BUILD_OUTPUT}
+          if [ ! -f "${BUILD_OUTPUT}/Image.gz" ]; then
+            echo "Retry failed!"
+            exit 1
+          fi
