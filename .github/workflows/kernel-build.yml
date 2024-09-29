@@ -33,11 +33,52 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libelf-dev
+        sudo apt-get install -y build-essential libelf-dev bc
 
     - name: Set up Samsung SM-S901E toolchain
       run: |
-        # Clone the Samsung toolchain repo
         git clone https://github.com/iamimmanuelraj/toolchain_samsung_SM_S901E.git
+        export TOOLCHAIN_DIR=$PWD/toolchain_samsung_SM_S901E/prebuilts/clang/host/linux-x86/clang-r416183b/bin
+        export PATH=$PATH:$TOOLCHAIN_DIR
+        export CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu-
+        export LD=$TOOLCHAIN_DIR/ld.lld
 
-        # Export paths for the toolchain
+    - name: Clean the source tree
+      run: |
+        make mrproper
+
+    - name: Configure kernel for NetHunter
+      run: |
+        export ARCH=arm64
+        if [ -f arch/arm64/configs/vendor/kalama_gki_defconfig ]; then
+          make ARCH=arm64 vendor/kalama_gki_defconfig O=out
+        elif [ -f arch/arm64/configs/stock-dm3q_defconfig ]; then
+          make ARCH=arm64 stock-dm3q_defconfig O=out
+        else
+          echo "Error: No valid defconfig found!"
+          exit 1
+        fi
+
+    - name: Build the kernel with Samsung toolchain
+      run: |
+        make -j$(nproc) CC=clang CROSS_COMPILE=$CROSS_COMPILE O=out || exit 1
+
+    - name: Verify kernel image
+      run: |
+        if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then
+          echo "Error: Kernel image not found!"
+          exit 1
+        fi
+
+    - name: Package the kernel with AnyKernel3
+      run: |
+        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        cd AnyKernel3
+        zip -r9 kernel.zip ./*
+        cd ..
+
+    - name: Upload kernel.zip artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: kernel.zip
+        path: AnyKernel3/kernel.zip
