@@ -30,6 +30,11 @@ jobs:
         fetch-depth: 0
         clean: true
 
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libelf-dev
+
     - name: Set up Samsung SM-S901E toolchain
       run: |
         # Clone the Samsung toolchain repo
