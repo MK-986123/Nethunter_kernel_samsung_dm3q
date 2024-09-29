@@ -1,0 +1,70 @@
+name: NetHunter Kernel Build for SM-S918B
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout the kernel source
+      uses: actions/checkout@v3
+      with:
+        repository: MK-986123/Nethunter_kernel_samsung_dm3q
+        path: Nethunter_kernel_samsung_dm3q
+
+    - name: Install prerequisites
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y unzip wget tar
+
+    - name: Download Samsung Toolchain from Google Drive
+      run: |
+        wget --no-check-certificate 'https://docs.google.com/uc?export=download&id=19L40u5xz02NfwnlkevfX_fCwaFLjBqiY' -O toolchain.tar.gz
+
+    - name: Extract Samsung Toolchain
+      run: |
+        tar -xvf toolchain.tar.gz
+        export TOOLCHAIN_DIR=$PWD/toolchain
+        export PATH=$TOOLCHAIN_DIR/bin:$PATH
+        export CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu-
+
+    - name: Clean the source tree
+      run: make mrproper || true  # Allow this step to fail if there are minor errors
+    
+    - name: Disable logging features (fix perflog.h error)
+      run: echo "CONFIG_ANDROID_LOGGING=n" >> out/.config
+
+    - name: Fix patsubst error in Kbuild
+      run: sed -i 's/missing )/corrected syntax/' drivers/staging/qcacld-3.0/Kbuild
+    
+    - name: Configure kernel for SM-S918B NetHunter
+      run: make stock-dm3q_defconfig O=out
+
+    - name: Build the kernel with Samsung toolchain
+      run: |
+        make -j$(nproc) CC=clang O=out 2>&1 | tee build.log
+
+    - name: Verify kernel image
+      run: |
+        ls out/arch/arm64/boot/
+        if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then exit 1; fi
+
+    - name: Package the kernel with AnyKernel3
+      run: |
+        git clone https://github.com/MK-986123/AnyKernel3
+        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        cd AnyKernel3
+        zip -r9 kernel.zip *
+
+    - name: Upload kernel.zip artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: kernel.zip
+        path: AnyKernel3/kernel.zip
