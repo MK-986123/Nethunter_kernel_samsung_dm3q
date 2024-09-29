@@ -34,19 +34,27 @@ jobs:
         run: |
           pip install gdown
 
-      - name: Download Toolchain from Google Drive
+      - name: Download and Extract Toolchain
         run: |
           gdown https://drive.google.com/uc?id=19L40u5xz02NfwnlkevfX_fCwaFLjBqiY -O toolchain.tar.gz
           mkdir -p ${GCC_PATH}
-          tar -xf toolchain.tar.gz -C ${GCC_PATH}
+          tar -xzf toolchain.tar.gz -C ${GCC_PATH} --strip-components=1
           export PATH=${GCC_PATH}/bin:$PATH
 
-      - name: Verify Toolchain
+      - name: Verify Toolchain Path
         run: |
-          if [ ! -d "${GCC_PATH}" ]; then
-            echo "Error: Toolchain extraction failed!"
+          if [ ! -f ${GCC_PATH}/bin/aarch64-linux-gnu-gcc ]; then
+            echo "Error: Toolchain not found at ${GCC_PATH}/bin/aarch64-linux-gnu-gcc"
             exit 1
+          else
+            echo "Toolchain found"
           fi
+
+      - name: Clean Kernel Source (mrproper)
+        working-directory: ./kernel
+        run: |
+          export ARCH=arm64
+          make mrproper
 
       - name: Configure Kernel (defconfig)
         working-directory: ./kernel
