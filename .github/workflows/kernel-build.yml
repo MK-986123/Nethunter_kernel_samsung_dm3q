@@ -1,7 +1,10 @@
-name: Build NetHunter Kernel
+name: NetHunter Kernel Build Workflow
 
 on:
   push:
+    branches:
+      - WIP
+  pull_request:
     branches:
       - WIP
 
@@ -10,52 +13,84 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v2
-
-    - name: Set Up GCC Toolchain
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-      env:
-        GCC_PATH: /usr/bin/aarch64-linux-gnu-gcc
-
-    - name: Download Toolchain from Google Drive
-      run: |
-        pip install gdown
-        gdown https://drive.google.com/uc?id=19L40u5xz02NfwnlkevfX_fCwaFLjBqiY -O toolchain.tar.gz
-        tar -xzvf toolchain.tar.gz
-      env:
-        GCC_PATH: ${{ github.workspace }}/gcc-arm
-
-    - name: Verify Toolchain Path
-      run: |
-        if [ ! -f "${GCC_PATH}/bin/aarch64-linux-gnu-gcc" ]; then
-          echo "Error: Toolchain not found at ${GCC_PATH}"
-          exit 1
-        fi
-
-    - name: Configure Kernel (defconfig)
-      run: |
-        make ARCH=arm64 CROSS_COMPILE=${GCC_PATH}/bin/aarch64-linux-gnu- kalama-gki_defconfig
-
-    - name: Build Kernel
-      run: |
-        make -j$(nproc) ARCH=arm64 CROSS_COMPILE=${GCC_PATH}/bin/aarch64-linux-gnu-
-
-    - name: Verify Kernel Build
-      run: |
-        file arch/arm64/boot/Image || { echo "Kernel image not found!"; exit 1; }
-
-    - name: Download and Integrate AnyKernel3
-      run: |
-        git clone https://github.com/osm0sis/AnyKernel3.git anykernel
-        cp arch/arm64/boot/Image anykernel/zImage
-        cd anykernel
-        zip -r9 anykernel.zip *
-
-    - name: Upload Kernel Artifacts
-      uses: actions/upload-artifact@v2
+    # Step 1: Checkout the repository
+    - name: Checkout Source Code
+      uses: actions/checkout@v3
       with:
-        name: Nethunter-Kernel
-        path: anykernel/anykernel.zip
+        fetch-depth: 1
+
+    # Step 2: Set up Proton Clang Toolchain
+    - name: Clone Proton Clang Toolchain
+      run: |
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/toolchains/proton-clang
+        echo "Cloning Proton Clang completed."
+
+    # Step 3: Set up Environment Variables
+    - name: Set Environment Variables
+      run: |
+        export PATH="$HOME/toolchains/proton-clang/bin:$PATH"
+        echo "Proton Clang toolchain path set."
+        echo "PATH: $PATH"
+
+    # Step 4: Kernel Compilation Setup (for cross-compilation)
+    - name: Set Compilation Variables
+      run: |
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        echo "Compilation variables set for cross-compilation."
+
+    # Step 5: Clean Kernel Source (Optional)
+    - name: Clean Kernel Source
+      run: |
+        make O=out clean && make O=out mrproper
+        echo "Cleaned kernel source and build directory."
+
+    # Step 6: Configure Kernel (corrected defconfig)
+    - name: Configure Kernel
+      run: |
+        make O=out ARCH=arm64 Nethunter_kernel_samsung_dm3q/arch/arm64/configs/vendor/kalama-gki_defconfig
+        echo "Kernel configuration applied."
+
+    # Step 7: Build the Kernel
+    - name: Build Kernel with Proton Clang
+      run: |
+        make -j$(nproc) O=out \
+          CC=clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip
+        echo "Kernel build completed."
+
+    # Step 8: Check for Build Artifacts (Image, DTBs, etc.)
+    - name: Check Artifacts
+      run: |
+        ls out/arch/arm64/boot/
+        echo "Checking kernel build artifacts..."
+
+    # Step 9: Archive Build Artifacts (after successful artifact check)
+    - name: Archive Build Artifacts
+      if: success()
+      uses: actions/upload-artifact@v3
+      with:
+        name: Kernel-Artifacts
+        path: out/arch/arm64/boot/
+        if-no-files-found: error
+
+    # Step 10: Generate Flashable ZIP (Optional)
+    - name: Create Flashable ZIP
+      run: |
+        cd anykernel3
+        zip -r9 kernel.zip *
+        echo "Flashable ZIP created."
+
+    # Step 11: Upload Flashable ZIP (Optional)
+    - name: Upload Flashable ZIP
+      uses: actions/upload-artifact@v3
+      with:
+        name: Kernel-ZIP
+        path: anykernel3/kernel.zip
+        if-no-files-found: error
