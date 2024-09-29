@@ -3,10 +3,10 @@ name: NetHunter Kernel Build for SM-S918B
 on:
   push:
     branches:
-      - main
+      - WIP
   pull_request:
     branches:
-      - main
+      - WIP
 
 jobs:
   build:
@@ -18,6 +18,7 @@ jobs:
       with:
         repository: MK-986123/Nethunter_kernel_samsung_dm3q
         path: Nethunter_kernel_samsung_dm3q
+        ref: WIP  # Checkout the WIP branch
 
     - name: Install prerequisites
       run: |
