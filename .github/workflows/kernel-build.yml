@@ -39,6 +39,7 @@ jobs:
         export TOOLCHAIN_DIR=$PWD/toolchain_samsung_SM_S901E/prebuilts/clang/host/linux-x86/clang-r416183b/bin
         export PATH=$PATH:$TOOLCHAIN_DIR
         export CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu-
+        export LD=$TOOLCHAIN_DIR/ld.lld  # Use LLVM's linker if present
 
     - name: Configure kernel for NetHunter
       run: |
@@ -56,7 +57,7 @@ jobs:
 
     - name: Build the kernel with Samsung toolchain
       run: |
-        make -j$(nproc) CC=clang CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu- O=out
+        make -j$(nproc) CC=clang CROSS_COMPILE=$CROSS_COMPILE O=out
 
     - name: Package the kernel with AnyKernel3
       run: |
