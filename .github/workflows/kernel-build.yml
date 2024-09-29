@@ -1,16 +1,16 @@
-name: Kernel Build with GCC for Qualcomm and Samsung
+name: Kernel Build with Linaro GCC for Qualcomm and Samsung
 
 on:
   push:
     branches:
-      - WIP
+      - WIP  # Triggers the action on pushes to the WIP branch
   pull_request:
     branches:
-      - WIP
+      - WIP  # Optionally build on pull requests to the WIP branch
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # The environment to run on (Ubuntu)
 
     steps:
     - name: Checkout Nethunter kernel source
@@ -35,13 +35,46 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential git bc bison flex libncurses5-dev curl zip libssl-dev libelf-dev python3-pip
 
-        # Install GCC and ARM Cross-Compiler
-        sudo apt-get install -y gcc-10 aarch64-linux-gnu-gcc-10
+    - name: Download and set up Linaro GCC 10.x toolchain
+      run: |
+        # Download Linaro GCC 10.x toolchain
+        wget https://releases.linaro.org/components/toolchain/binaries/10.2-2020.11/aarch64-linux-gnu/gcc-linaro-10.2.1-2020.11-x86_64_aarch64-linux-gnu.tar.xz
+        tar -xvf gcc-linaro-10.2.1-2020.11-x86_64_aarch64-linux-gnu.tar.xz
+        export PATH=$PATH:$PWD/gcc-linaro-10.2.1-2020.11-x86_64_aarch64-linux-gnu/bin
+        export CROSS_COMPILE=aarch64-linux-gnu-
+
+    - name: Create custom kernel config for NetHunter with logging and WLAN driver disabled
+      run: |
+        echo "CONFIG_USB_GADGET=y" >> nethunter_defconfig
+        echo "CONFIG_HID_GADGET=y" >> nethunter_defconfig
+        echo "CONFIG_USB_F_ACM=y" >> nethunter_defconfig
+        echo "CONFIG_USB_F_HID=y" >> nethunter_defconfig
+        echo "CONFIG_CFG80211=y" >> nethunter_defconfig
+        echo "CONFIG_MAC80211=y" >> nethunter_defconfig
+        echo "CONFIG_BT=y" >> nethunter_defconfig
+        echo "CONFIG_BT_RFCOMM=y" >> nethunter_defconfig
+        echo "CONFIG_BT_RFCOMM_TTY=y" >> nethunter_defconfig
+        echo "CONFIG_EXT4_FS=y" >> nethunter_defconfig
+        echo "CONFIG_VFAT_FS=y" >> nethunter_defconfig
+        echo "CONFIG_PERF_EVENTS=n" >> nethunter_defconfig
+        echo "CONFIG_QCA_CLD_WLAN=n" >> nethunter_defconfig  # Disable the qcacld-3.0 driver
+
+    - name: Patch Kbuild for qcacld-3.0 to fix patsubst error
+      run: |
+        sed -i 's|$(patsubst %.c,%.o,$(wildcard ./*.c))|$(patsubst %.c,%.o,$(wildcard ./%.c))|' drivers/staging/qcacld-3.0/Kbuild
+
+    - name: Thorough Cleanup of Source Tree
+      run: |
+        make mrproper
+        rm -rf out
+        rm -rf include/config
+        rm -rf include/generated
+        make clean
 
     - name: Configure kernel for NetHunter
       run: |
         export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-  # Use GCC 10.x cross-compiler
+        export CROSS_COMPILE=aarch64-linux-gnu-  # Use GCC 10.x cross-compiler from Linaro toolchain
         export CC=gcc
 
         # Use the kalama_gki_defconfig or stock-dm3q_defconfig based on availability
@@ -54,10 +87,9 @@ jobs:
           exit 1
         fi
 
-        # Merge the custom configuration with the chosen defconfig
         scripts/kconfig/merge_config.sh out/.config nethunter_defconfig
 
-    - name: Build the kernel with GCC and aarch64 cross-compiler
+    - name: Build the kernel with Linaro GCC 10.x
       run: |
         make -j$(nproc) CC=gcc CROSS_COMPILE=aarch64-linux-gnu- O=out
 
