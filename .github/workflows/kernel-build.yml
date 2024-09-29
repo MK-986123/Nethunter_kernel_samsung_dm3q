@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      DEFCONFIG: "vendor/kalama-gki_defconfig"  # Adjusted the path to sub vendor folder
+      DEFCONFIG: "vendor/kalama-gki_defconfig"
       GCC_PATH: "/opt/gcc-arm"
       BUILD_OUTPUT: "output/"
     
@@ -29,6 +29,10 @@ jobs:
           sudo apt-get install -y bc bison flex libssl-dev build-essential \
           ccache libncurses5-dev libelf-dev libudev-dev libpci-dev wget curl git \
           xz-utils fakeroot rsync dwarves python3
+
+      - name: Install gdown
+        run: |
+          pip install gdown
 
       - name: Download Toolchain from Google Drive
         run: |
