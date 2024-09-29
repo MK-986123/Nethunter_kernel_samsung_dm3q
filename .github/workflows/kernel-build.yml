@@ -1,93 +1,63 @@
-name: Kernel Build with Samsung SM-S901E Toolchain
+name: NetHunter Kernel Build for SM-S918B
 
 on:
   push:
     branches:
-      - WIP
+      - main
   pull_request:
     branches:
-      - WIP
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Nethunter kernel source
+    - name: Checkout the kernel source
       uses: actions/checkout@v3
       with:
         repository: MK-986123/Nethunter_kernel_samsung_dm3q
-        ref: WIP
-        fetch-depth: 0
-        clean: true
+        path: Nethunter_kernel_samsung_dm3q
 
-    - name: Checkout AnyKernel3 source
-      uses: actions/checkout@v3
-      with:
-        repository: MK-986123/AnyKernel3
-        ref: master
-        path: AnyKernel3
-        fetch-depth: 0
-        clean: true
-
-    - name: Install Dependencies
+    - name: Download Samsung Toolchain
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential libelf-dev bc
-
-    - name: Set up Samsung SM-S901E toolchain
-      run: |
-        git clone https://github.com/iamimmanuelraj/toolchain_samsung_SM_S901E.git
-        export TOOLCHAIN_DIR=$PWD/toolchain_samsung_SM_S901E/prebuilts/clang/host/linux-x86/clang-r416183b/bin
-        export PATH=$PATH:$TOOLCHAIN_DIR
-        export CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu-
-        export LD=$TOOLCHAIN_DIR/ld.lld
+        # If using a pre-hosted 6GB toolchain, download here
+        curl -L -o samsung_toolchain.tar.gz "<direct_link_to_samsung_toolchain>"
+        tar -xvf samsung_toolchain.tar.gz
+        export PATH=$PATH:$PWD/samsung_toolchain/bin
+        export CROSS_COMPILE=aarch64-linux-android-
 
     - name: Clean the source tree
       run: |
-        make mrproper || true  # This step is allowed to fail if there are issues.
-
-    - name: Configure kernel for NetHunter
-      run: |
-        export ARCH=arm64
-        if [ -f arch/arm64/configs/vendor/kalama_gki_defconfig ]; then
-          make ARCH=arm64 vendor/kalama_gki_defconfig O=out
-        elif [ -f arch/arm64/configs/stock-dm3q_defconfig ]; then
-          make ARCH=arm64 stock-dm3q_defconfig O=out
-        else
-          echo "Error: No valid defconfig found!"
-          exit 1
-        fi
-
+        make mrproper || true  # Allow this step to fail if errors occur
+    
     - name: Disable logging features (fix perflog.h error)
-      run: |
-        echo "CONFIG_ANDROID_LOGGING=n" >> out/.config
-        echo "CONFIG_KPERFMON=n" >> out/.config
+      run: echo "CONFIG_ANDROID_LOGGING=n" >> out/.config
 
     - name: Fix patsubst error in Kbuild
-      run: |
-        sed -i 's/patsubst.../correct_patsubst_syntax/' drivers/staging/qcacld-3.0/Kbuild
+      run: sed -i 's/missing )/corrected syntax/' drivers/staging/qcacld-3.0/Kbuild
+    
+    - name: Configure kernel for SM-S918B NetHunter
+      run: make stock-dm3q_defconfig O=out
 
     - name: Build the kernel with Samsung toolchain
       run: |
-        make -j$(nproc) CC=clang CROSS_COMPILE=$CROSS_COMPILE O=out || exit 1
+        make -j$(nproc) CC=clang O=out 2>&1 | tee build.log
 
     - name: Verify kernel image
       run: |
-        if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then
-          echo "Error: Kernel image not found!"
-          exit 1
-        fi
+        ls out/arch/arm64/boot/
+        if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then exit 1; fi
 
     - name: Package the kernel with AnyKernel3
       run: |
+        git clone https://github.com/MK-986123/AnyKernel3
         cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         cd AnyKernel3
-        zip -r9 kernel.zip ./*
-        cd ..
+        zip -r9 kernel.zip *
 
     - name: Upload kernel.zip artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v2
       with:
         name: kernel.zip
         path: AnyKernel3/kernel.zip
