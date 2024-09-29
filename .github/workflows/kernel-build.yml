@@ -47,6 +47,15 @@ jobs:
       run: |
         make mrproper
 
+    - name: Disable logging features
+      run: |
+        echo "CONFIG_ANDROID_LOGGING=n" >> out/.config
+        echo "CONFIG_KPERFMON=n" >> out/.config
+
+    - name: Fix patsubst error in Kbuild
+      run: |
+        sed -i 's/patsubst.../correct_patsubst_syntax/' drivers/staging/qcacld-3.0/Kbuild
+
     - name: Configure kernel for NetHunter
       run: |
         export ARCH=arm64
