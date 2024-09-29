@@ -1,82 +1,48 @@
-name: Kernel Build with Fixes for Missing Files and Driver Errors
+name: Kernel Build with GCC for Qualcomm and Samsung
 
 on:
   push:
     branches:
-      - WIP  # Triggers the action on pushes to the WIP branch
+      - WIP
   pull_request:
     branches:
-      - WIP  # Optionally build on pull requests to the WIP branch
+      - WIP
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # The environment to run on (Ubuntu)
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Nethunter kernel source
       uses: actions/checkout@v3
       with:
         repository: MK-986123/Nethunter_kernel_samsung_dm3q
-        ref: WIP  # Using 'WIP' branch for Nethunter kernel
-        fetch-depth: 0  # Ensures full history is fetched
-        clean: true  # Cleans any previous files
+        ref: WIP
+        fetch-depth: 0
+        clean: true
 
     - name: Checkout AnyKernel3 source
       uses: actions/checkout@v3
       with:
         repository: MK-986123/AnyKernel3
-        ref: master  # Using 'master' branch for AnyKernel3
+        ref: master
         path: AnyKernel3
-        fetch-depth: 0  # Ensures full history is fetched
-        clean: true  # Cleans any previous files
+        fetch-depth: 0
+        clean: true
 
     - name: Set up build environment
       run: |
-        # Update the system and install required build tools
         sudo apt-get update
         sudo apt-get install -y build-essential git bc bison flex libncurses5-dev curl zip libssl-dev libelf-dev python3-pip
-        # Install the toolchains from the Ubuntu repository
-        sudo apt-get install -y clang llvm lld gcc-aarch64-linux-gnu
-        # Install kconfiglib for menuconfig support
-        pip3 install kconfiglib
 
-    - name: Create custom kernel config for NetHunter with logging and WLAN driver disabled
-      run: |
-        # Disable performance events (perf logging), WLAN drivers, and add NetHunter configs
-        echo "CONFIG_USB_GADGET=y" >> nethunter_defconfig
-        echo "CONFIG_HID_GADGET=y" >> nethunter_defconfig
-        echo "CONFIG_USB_F_ACM=y" >> nethunter_defconfig
-        echo "CONFIG_USB_F_HID=y" >> nethunter_defconfig
-        echo "CONFIG_CFG80211=y" >> nethunter_defconfig
-        echo "CONFIG_MAC80211=y" >> nethunter_defconfig
-        echo "CONFIG_BT=y" >> nethunter_defconfig
-        echo "CONFIG_BT_RFCOMM=y" >> nethunter_defconfig
-        echo "CONFIG_BT_RFCOMM_TTY=y" >> nethunter_defconfig
-        echo "CONFIG_EXT4_FS=y" >> nethunter_defconfig
-        echo "CONFIG_VFAT_FS=y" >> nethunter_defconfig
-        echo "CONFIG_PERF_EVENTS=n" >> nethunter_defconfig
-        echo "CONFIG_QCA_CLD_WLAN=n" >> nethunter_defconfig
-
-    - name: Thorough Cleanup of Source Tree
-      run: |
-        # Ensure that the source tree is cleaned up properly
-        make mrproper
-
-        # Force delete the 'out' directory and related artifacts if it exists
-        rm -rf out
-        rm -rf include/config
-        rm -rf include/generated
-
-        # Clean again just to ensure all remnants are gone
-        make clean
+        # Install GCC and ARM Cross-Compiler
+        sudo apt-get install -y gcc-10 aarch64-linux-gnu-gcc-10
 
     - name: Configure kernel for NetHunter
       run: |
-        # Export environment variables for Clang and cross-compiler
         export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-  # Use aarch64 cross-compiler from Ubuntu repository
-        export CC=clang
-        export LD=ld.lld
+        export CROSS_COMPILE=aarch64-linux-gnu-  # Use GCC 10.x cross-compiler
+        export CC=gcc
 
         # Use the kalama_gki_defconfig or stock-dm3q_defconfig based on availability
         if [ -f arch/arm64/configs/vendor/kalama_gki_defconfig ]; then
@@ -91,17 +57,13 @@ jobs:
         # Merge the custom configuration with the chosen defconfig
         scripts/kconfig/merge_config.sh out/.config nethunter_defconfig
 
-    - name: Build the kernel with Clang and aarch64 cross-compiler
+    - name: Build the kernel with GCC and aarch64 cross-compiler
       run: |
-        # Build the kernel using Clang, LLD, and aarch64 cross-compiler
-        make -j$(nproc) CC=clang LD=ld.lld KBUILD_COMPILER_STRING="Clang $(clang --version)" O=out
+        make -j$(nproc) CC=gcc CROSS_COMPILE=aarch64-linux-gnu- O=out
 
     - name: Package the kernel with AnyKernel3
       run: |
-        # Copy compiled kernel to AnyKernel3 directory
         cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        
-        # Create a flashable zip
         cd AnyKernel3
         zip -r9 kernel.zip ./*
         cd ..
