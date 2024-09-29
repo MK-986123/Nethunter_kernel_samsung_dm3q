@@ -65,7 +65,7 @@ jobs:
         zip -r9 kernel.zip *
 
     - name: Upload kernel.zip artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: kernel.zip
         path: AnyKernel3/kernel.zip
