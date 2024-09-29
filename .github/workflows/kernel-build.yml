@@ -1,70 +1,113 @@
-name: NetHunter Kernel Build for SM-S918B
+name: NetHunter Kernel Build for Samsung S23 Ultra (SM-S916B)
 
 on:
   push:
     branches:
-      - main
+      - WIP
   pull_request:
     branches:
-      - main
+      - WIP
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    env:
+      DEFCONFIG: "kalama-gki_defconfig"
+      GCC_PATH: "/opt/gcc-arm"
+      BUILD_OUTPUT: "output/"
+    
     steps:
-    - name: Checkout the kernel source
-      uses: actions/checkout@v3
-      with:
-        repository: MK-986123/Nethunter_kernel_samsung_dm3q
-        path: Nethunter_kernel_samsung_dm3q
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ github.repository }}
+          path: kernel
 
-    - name: Install prerequisites
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y unzip wget tar
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev build-essential \
+          ccache libncurses5-dev libelf-dev libudev-dev libpci-dev wget curl git \
+          xz-utils fakeroot rsync dwarves python3
 
-    - name: Download Samsung Toolchain from Google Drive
-      run: |
-        wget --no-check-certificate 'https://docs.google.com/uc?export=download&id=19L40u5xz02NfwnlkevfX_fCwaFLjBqiY' -O toolchain.tar.gz
+      - name: Download Toolchain from Google Drive
+        run: |
+          FILEID="19L40u5xz02NfwnlkevfX_fCwaFLjBqiY"
+          FILENAME="toolchain.tar.gz"
+          CONFIRM=$(curl -sc /tmp/gcookie "https://drive.google.com/uc?export=download&id=${FILEID}" | grep -o 'confirm=[^&]*' | cut -d '=' -f 2)
+          curl -Lb /tmp/gcookie "https://drive.google.com/uc?export=download&confirm=${CONFIRM}&id=${FILEID}" -o ${FILENAME}
+          mkdir -p ${GCC_PATH}
+          tar -xf ${FILENAME} -C ${GCC_PATH}
+          export PATH=${GCC_PATH}/bin:$PATH
 
-    - name: Extract Samsung Toolchain
-      run: |
-        tar -xvf toolchain.tar.gz
-        export TOOLCHAIN_DIR=$PWD/toolchain
-        export PATH=$TOOLCHAIN_DIR/bin:$PATH
-        export CROSS_COMPILE=$TOOLCHAIN_DIR/aarch64-linux-gnu-
+      - name: Verify Toolchain
+        run: |
+          if [ ! -d "${GCC_PATH}" ]; then
+            echo "Error: Toolchain extraction failed!"
+            exit 1
+          fi
 
-    - name: Clean the source tree
-      run: make mrproper || true  # Allow this step to fail if there are minor errors
-    
-    - name: Disable logging features (fix perflog.h error)
-      run: echo "CONFIG_ANDROID_LOGGING=n" >> out/.config
+      - name: Configure Kernel (defconfig)
+        working-directory: ./kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          make ${DEFCONFIG}
 
-    - name: Fix patsubst error in Kbuild
-      run: sed -i 's/missing )/corrected syntax/' drivers/staging/qcacld-3.0/Kbuild
-    
-    - name: Configure kernel for SM-S918B NetHunter
-      run: make stock-dm3q_defconfig O=out
+      - name: Build Kernel
+        working-directory: ./kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=${GCC_PATH}/bin/aarch64-linux-gnu-
+          make -j$(nproc) O=${BUILD_OUTPUT} ARCH=arm64 CROSS_COMPILE=${GCC_PATH}/bin/aarch64-linux-gnu-
 
-    - name: Build the kernel with Samsung toolchain
-      run: |
-        make -j$(nproc) CC=clang O=out 2>&1 | tee build.log
+      - name: Verify Kernel Build
+        run: |
+          ls ${BUILD_OUTPUT}
+          if [ ! -f "${BUILD_OUTPUT}/Image.gz" ]; then
+            echo "Error: Kernel image not found!"
+            exit 1
+          fi
 
-    - name: Verify kernel image
-      run: |
-        ls out/arch/arm64/boot/
-        if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then exit 1; fi
+      - name: Download and Integrate AnyKernel3
+        run: |
+          echo "Cloning AnyKernel3 repository"
+          git clone https://github.com/MK-986123/AnyKernel3.git ./AnyKernel3
+          cp ${BUILD_OUTPUT}/Image.gz ./AnyKernel3/zImage
+          cd ./AnyKernel3
+          zip -r9 kernel-s23ultra.zip *
+          echo "Kernel packaged with AnyKernel3"
 
-    - name: Package the kernel with AnyKernel3
-      run: |
-        git clone https://github.com/MK-986123/AnyKernel3
-        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        cd AnyKernel3
-        zip -r9 kernel.zip *
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Kernel Image
+          path: ${BUILD_OUTPUT}/Image.gz
 
-    - name: Upload kernel.zip artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: kernel.zip
-        path: AnyKernel3/kernel.zip
+  error-handling:
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Retry with Alternate Toolchain
+        run: |
+          echo "Retrying with alternate toolchain..."
+          export ALT_GCC_PATH=/opt/alt-gcc-arm
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9.git ${ALT_GCC_PATH}
+          export PATH=${ALT_GCC_PATH}/bin:$PATH
+
+      - name: Retry Build
+        working-directory: ./kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=${ALT_GCC_PATH}/bin/aarch64-linux-android-
+          make -j$(nproc) O=${BUILD_OUTPUT} ARCH=arm64 CROSS_COMPILE=${ALT_GCC_PATH}/bin/aarch64-linux-android-
+
+      - name: Verify Retry Build
+        run: |
+          ls ${BUILD_OUTPUT}
+          if [ ! -f "${BUILD_OUTPUT}/Image.gz" ]; then
+            echo "Retry failed!"
+            exit 1
+          fi
