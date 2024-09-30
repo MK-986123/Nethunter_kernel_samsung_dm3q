@@ -1,96 +1,167 @@
-name: NetHunter Kernel Build Workflow
+name: "Build kernels"
+
+env:
+  CONFIGURATION: "repos.json"
+  OUT_DIR: "out"
 
 on:
-  push:
-    branches:
-      - WIP
-  pull_request:
-    branches:
-      - WIP
+  workflow_dispatch:
 
 jobs:
-  build:
+  Set-repos:
+    name: "🐂 Parse repos.json"
     runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.generate-matrix.outputs.repos }}
+    steps:
+      - name: "😄 Checkout"
+        uses: actions/checkout@v3
+
+      - name: "😆 Generate Matrix"
+        id: generate-matrix
+        run: |
+          echo "repos<<EOF" >> $GITHUB_OUTPUT
+          cat ${{ env.CONFIGURATION }} >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  Build-Kernel:
+    name: "🐎 Build kernel"
+    runs-on: ubuntu-latest
+    needs:
+      - Set-repos
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        repos: ${{ fromJSON(needs.Set-repos.outputs.repos) }}
+    env:
+      kernelDir: ${{ matrix.repos.kernelSource.name }}_${{ matrix.repos.kernelSource.device }}
+      kernelName: ${{ matrix.repos.kernelSource.name }}
+      kernelRepo: ${{ matrix.repos.kernelSource.repo }}
+      kernelBranch: ${{ matrix.repos.kernelSource.branch }}
+      kernelDevice: ${{ matrix.repos.kernelSource.device }}
+      DEFCONFIG_NAME: "kalama-gki_defconfig"
+      withKernelSU: ${{ matrix.repos.withKernelSU }}
 
     steps:
-    # Step 1: Checkout the repository
-    - name: Checkout Source Code
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 1
+      - name: "✨ Create working dir"
+        run: mkdir -p $kernelDir
 
-    # Step 2: Set up Proton Clang Toolchain
-    - name: Clone Proton Clang Toolchain
-      run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/toolchains/proton-clang
-        echo "Cloning Proton Clang completed."
+      - name: "⭐ Install prerequisites"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python2 python3 libarchive-tools
+          echo "/usr/bin/aarch64-linux-gnu-" >> $GITHUB_PATH
 
-    # Step 3: Set up Environment Variables
-    - name: Set Environment Variables
-      run: |
-        export PATH="$HOME/toolchains/proton-clang/bin:$PATH"
-        echo "Proton Clang toolchain path set."
-        echo "PATH: $PATH"
+      - name: "🌟 Clone kernel source => (${{ env.kernelRepo }})"
+        working-directory: ./${{ env.kernelDir }}
+        run: |
+          git clone --recursive --branch $kernelBranch $kernelRepo $kernelName --depth=1
 
-    # Step 4: Kernel Compilation Setup (for cross-compilation)
-    - name: Set Compilation Variables
-      run: |
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-        echo "Compilation variables set for cross-compilation."
+      - name: "💫 Get toolchains"
+        working-directory: ./${{ env.kernelDir }}
+        env:
+          toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
+        run: |
+          toolchains_num="$(echo $toolchains | jq 'length')"
+          echo $toolchains_num
+          for ((i=0;i<toolchains_num;i++)); do
+            name=$(echo $toolchains | jq -r ".[$i].name")
+            repo=$(echo $toolchains | jq -r ".[$i].repo")
+            branch=$(echo $toolchains | jq -r ".[$i].branch")
+            git clone --recursive --branch $branch $repo $name --depth=1
+            echo "$(pwd)/$name/" >> $GITHUB_PATH
+            echo "$(pwd)/$name/bin" >> $GITHUB_PATH
+          done
+          echo "PATH Variable: $PATH"
 
-    # Step 5: Clean Kernel Source (includes distclean option for full clean)
-    - name: Clean Kernel Source
-      run: |
-        make O=out distclean || make O=out clean && make O=out mrproper
-        echo "Cleaned kernel source and build directory."
+      - name: "😎 Set args"
+        id: generate-args
+        working-directory: ./${{ env.kernelDir }}
+        env:
+          params: "${{ toJSON(matrix.repos.params) }}"
+          THREAD: $(nproc --all)
+        run: |
+          echo "PATH Variable: $PATH"
+          ARCH=$(echo $params | jq -r ".ARCH")
+          CROSS_COMPILE=$(echo $params | jq -r ".CROSS_COMPILE")
+          CROSS_COMPILE_COMPAT=$(echo $params | jq -r ".CROSS_COMPILE_COMPAT")
+          CROSS_COMPILE_ARM32=$(echo $params | jq -r ".CROSS_COMPILE_ARM32")
+          CLANG_TRIPLE=$(echo $params | jq -r ".CLANG_TRIPLE")
+          AR=$(echo $params | jq -r ".AR")
+          CC=$(echo $params | jq -r ".CC")
 
-    # Step 6: Configure Kernel (using correct defconfig path)
-    - name: Configure Kernel
-      run: |
-        make O=out ARCH=arm64 vendor/kalama-gki_defconfig KCFLAGS="-Wno-error"
-        echo "Kernel configuration applied."
+          echo "ARCH=$ARCH" >> $GITHUB_ENV
 
-    # Step 7: Build the Kernel with Proton Clang
-    - name: Build Kernel with Proton Clang
-      run: |
-        make -j$(nproc) O=out \
-          CC=clang \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip
-        echo "Kernel build completed."
+          args="-j$(nproc --all)"
+          if [ -n "${{ env.OUT_DIR }}" ]; then
+            mkdir -p $(pwd)/${{ env.OUT_DIR }}
+            args="$args O=$(pwd)/${{ env.OUT_DIR }}"
+          fi
+          if [ -n "$ARCH" ]; then
+            args="$args ARCH=$ARCH"
+          fi
+          if [ -n "$CROSS_COMPILE" ]; then
+            args="$args CROSS_COMPILE=$CROSS_COMPILE"
+          fi
+          if [ -n "$CLANG_TRIPLE" ]; then
+            args="$args CLANG_TRIPLE=$CLANG_TRIPLE"
+          fi
+          if [ -n "$CROSS_COMPILE_COMPAT" ]; then
+            args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_COMPAT"
+          fi
+          if [ -n "$AR" ]; then
+            args="$args AR=$AR"
+          fi
+          if [ -n "$CC" ]; then
+            args="$args CC=$CC"
+          fi
+          echo "args=$args" >> $GITHUB_OUTPUT
 
-    # Step 8: Check for Build Artifacts (Image, DTBs, etc.)
-    - name: Check Artifacts
-      run: |
-        ls out/arch/arm64/boot/
-        echo "Checking kernel build artifacts..."
+      - name: "👍 Make defconfig"
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
+        run: |
+          echo "PATH Variable: $PATH"
+          make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
-    # Step 9: Archive Build Artifacts (after successful artifact check)
-    - name: Archive Build Artifacts
-      if: success()
-      uses: actions/upload-artifact@v3
-      with:
-        name: Kernel-Artifacts
-        path: out/arch/arm64/boot/
-        if-no-files-found: error
+      - name: "🎶 Build kernel"
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
+        run: |
+          echo "PATH Variable: $PATH"
+          make ${args}
 
-    # Step 10: Generate Flashable ZIP (Optional)
-    - name: Create Flashable ZIP
-      run: |
-        cd anykernel3
-        zip -r9 kernel.zip *
-        echo "Flashable ZIP created."
+      - name: "💛 Upload Image"
+        uses: actions/upload-artifact@v3
+        with:
+          name: Image(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
+          if-no-files-found: ignore
+          retention-days: 7
 
-    # Step 11: Upload Flashable ZIP (Optional)
-    - name: Upload Flashable ZIP
-      uses: actions/upload-artifact@v3
-      with:
-        name: Kernel-ZIP
-        path: anykernel3/kernel.zip
-        if-no-files-found: error
+      - name: "💙 Upload Image.gz"
+        uses: actions/upload-artifact@v3
+        with:
+          name: Image.gz(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: "💜 Upload dtb"
+        uses: actions/upload-artifact@v3
+        with:
+          name: dtb(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: "❤️ Upload dtbo.img"
+        uses: actions/upload-artifact@v3
+        with:
+          name: dtbo.img(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
+          if-no-files-found: ignore
+          retention-days: 7
