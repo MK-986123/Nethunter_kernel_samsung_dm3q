@@ -45,10 +45,10 @@ jobs:
         make O=out distclean || make O=out clean && make O=out mrproper
         echo "Cleaned kernel source and build directory."
 
-    # Step 6: Configure Kernel (using correct defconfig path and disabling warnings as errors)
+    # Step 6: Configure Kernel (using correct defconfig path)
     - name: Configure Kernel
       run: |
-        make O=out ARCH=arm64 Nethunter_kernel_samsung_dm3q/vendor/kalama-gki_defconfig KCFLAGS="-Wno-error"
+        make O=out ARCH=arm64 vendor/kalama-gki_defconfig KCFLAGS="-Wno-error"
         echo "Kernel configuration applied."
 
     # Step 7: Build the Kernel with Proton Clang
