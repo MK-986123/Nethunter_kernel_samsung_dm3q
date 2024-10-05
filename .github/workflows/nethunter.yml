@@ -12,24 +12,20 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       WORKSPACE: ${{ github.workspace }}
+      builddate: $(date +'%Y%m%d')
       KERNEL_NAME: Nethunter_kernel_samsung_dm3q
       KERNEL_REPO: "https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q.git"
       KERNEL_BRANCH: "WIP"
       KERNEL_DEVICE: "samsung_dm3q"
       DEFCONFIG_NAME: "vendor/kalama-gki_defconfig"
-      withMagisk: true
+      withKernelSU: false
       useAnykernel: true
       release: true
-
     steps:
       - name: "Install prerequisites"
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python2 python3 libarchive-tools
-
-      - name: "Set Build Date"
-        id: builddate
-        run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
 
       - name: "Setup Anykernel3"
         run: |
@@ -38,8 +34,8 @@ jobs:
 
       - name: "Clone kernel source => (${{ env.KERNEL_REPO }})"
         run: |
-          git clone --recursive --depth=1 -j $(nproc) --branch ${{ env.KERNEL_BRANCH }} ${{ env.KERNEL_REPO }} ${{ env.KERNEL_NAME }}
-          echo "Clone kernel source => (${{ env.KERNEL_REPO }})"
+          git clone --recursive --depth=1 -j $(nproc) --branch $KERNEL_BRANCH $KERNEL_REPO $KERNEL_NAME
+          echo "Clone kernel source => ($KERNEL_REPO)"
 
       - name: "Get toolchains"
         run: |
@@ -48,92 +44,103 @@ jobs:
 
       - name: "Set args"
         id: generate-args
+        env:
+          THREAD: $(nproc --all)
         run: |
-          THREAD=$(nproc --all)
           ARCH=arm64
           CC=toolchains/proton-clang/bin/clang
-          args="-j${THREAD} O=${{ env.OUT_DIR }} ARCH=$ARCH CC=${{ env.WORKSPACE }}/$CC"
+          args="-j${{ env.THREAD }} O=${{ env.OUT_DIR }} ARCH=$ARCH CC=${{ env.WORKSPACE }}/$CC"
           echo "args=$args" >> $GITHUB_OUTPUT
 
-      - name: "Update Magisk"
-        if: ${{ env.withMagisk }}
+      - name: "Update KernelSU"
         working-directory: ${{ env.KERNEL_NAME }}
         env:
           arch: arm64
+        if: ${{ env.withKernelSU == 'true' }}
         run: |
-          # Remove any existing Magisk integration
-          if [ -d "./Magisk" ]; then
-            rm -rf "./Magisk"
+          if [ -d "./KernelSU" ]; then
+            rm -rf "./KernelSU"
           fi
-          # Clone Magisk repository
-          git clone --depth=1 https://github.com/topjohnwu/Magisk.git
-          # Apply Magisk patches to the kernel
-          bash Magisk/scripts/boot.sh
-
-          # Update the kernel config to support Magisk
-          echo -e "CONFIG_INITRAMFS_SOURCE=\"Magisk/magisk_init\"" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_SECURITY_SELINUX=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=1" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          if [ -d "./drivers/kernelsu" ]; then
+            rm -rf "./drivers/kernelsu"
+          fi
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          echo -e "CONFIG_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           cat arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
 
       - name: "Make defconfig"
         working-directory: ${{ env.KERNEL_NAME }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
+          arch: arm64
         run: |
-          make ${{ steps.generate-args.outputs.args }} ${{ env.DEFCONFIG_NAME }}
+          make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
       - name: "Build kernel"
         working-directory: ${{ env.KERNEL_NAME }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
         run: |
-          make ${{ steps.generate-args.outputs.args }}
+          make $args
 
       - name: "Upload Image"
         uses: actions/upload-artifact@v3
-        if-no-files-found: ignore
+        env:
+          arch: arm64
         with:
           name: Image-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/arm64/boot/Image
-          retention-days: 7
+          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image
+        continue-on-error: true
+        retention-days: 7
 
       - name: "Upload Image.gz"
         uses: actions/upload-artifact@v3
-        if-no-files-found: ignore
+        env:
+          arch: arm64
         with:
           name: Image.gz-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz
-          retention-days: 7
+          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image.gz
+        continue-on-error: true
+        retention-days: 7
 
       - name: "Upload dtb"
         uses: actions/upload-artifact@v3
-        if-no-files-found: ignore
+        env:
+          arch: arm64
         with:
           name: dtb-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/arm64/boot/dtb
-          retention-days: 7
+          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/dtb
+        continue-on-error: true
+        retention-days: 7
 
       - name: "Upload dtbo.img"
         uses: actions/upload-artifact@v3
-        if-no-files-found: ignore
+        env:
+          arch: arm64
         with:
           name: dtbo.img-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/arm64/boot/dtbo.img
-          retention-days: 7
+          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/dtbo.img
+        continue-on-error: true
+        retention-days: 7
 
       - name: "Pack AnyKernel3.zip"
-        if: ${{ env.useAnykernel }}
+        if: ${{ env.useAnykernel == 'true' }}
         env:
+          arch: arm64
           anykernel: "${{ env.WORKSPACE }}/${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}"
         run: |
           ls -al
-          if [ -e "${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz-dtb" ]; then
-            cp -f ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz-dtb ./AnyKernel3/
+          if [ -e "${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image.gz-dtb" ]; then
+            cp -f ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image.gz-dtb ./AnyKernel3/
           fi
           cd AnyKernel3/
           zip -q -r "${{ env.anykernel }}.zip" *
 
       - name: "Upload AnyKernel3 image => (${{ env.builddate }})"
         uses: actions/upload-artifact@v3
-        if: ${{ env.useAnykernel }}
+        if: ${{ env.useAnykernel == 'true' }}
         with:
           name: "${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}"
           path: AnyKernel3/*
@@ -141,7 +148,7 @@ jobs:
       - name: "Create GitHub Release => (${{ env.builddate }})"
         continue-on-error: true
         uses: softprops/action-gh-release@v1
-        if: ${{ env.useAnykernel && env.release }}
+        if: ${{ env.useAnykernel == 'true' && env.release == 'true' }}
         with:
           tag_name: v${{ env.builddate }}.${{ github.run_number }}
           files: "${{ env.WORKSPACE }}/${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}.zip"
