@@ -32,7 +32,7 @@ jobs:
           git clone --recursive --depth=1 -j $(nproc) --branch master https://github.com/osm0sis/AnyKernel3 AnyKernel3
           echo "Setup Anykernel3 => (https://github.com/osm0sis/AnyKernel3)"
 
-      - name: "Clone kernel source => (${{ env.KERNEL_REPO }})"
+      - name: "Clone kernel source"
         run: |
           git clone --recursive --depth=1 -j $(nproc) --branch $KERNEL_BRANCH $KERNEL_REPO $KERNEL_NAME
           echo "Clone kernel source => ($KERNEL_REPO)"
@@ -87,43 +87,35 @@ jobs:
 
       - name: "Upload Image"
         uses: actions/upload-artifact@v3
-        env:
-          arch: arm64
         with:
           name: Image-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/Image
+          retention-days: 7
         continue-on-error: true
-        retention-days: 7
 
       - name: "Upload Image.gz"
         uses: actions/upload-artifact@v3
-        env:
-          arch: arm64
         with:
           name: Image.gz-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image.gz
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz
+          retention-days: 7
         continue-on-error: true
-        retention-days: 7
 
       - name: "Upload dtb"
         uses: actions/upload-artifact@v3
-        env:
-          arch: arm64
         with:
           name: dtb-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/dtb
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/dtb
+          retention-days: 7
         continue-on-error: true
-        retention-days: 7
 
       - name: "Upload dtbo.img"
         uses: actions/upload-artifact@v3
-        env:
-          arch: arm64
         with:
           name: dtbo.img-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
-          path: ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/dtbo.img
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/dtbo.img
+          retention-days: 7
         continue-on-error: true
-        retention-days: 7
 
       - name: "Pack AnyKernel3.zip"
         if: ${{ env.useAnykernel == 'true' }}
@@ -138,14 +130,14 @@ jobs:
           cd AnyKernel3/
           zip -q -r "${{ env.anykernel }}.zip" *
 
-      - name: "Upload AnyKernel3 image => (${{ env.builddate }})"
+      - name: "Upload AnyKernel3 image"
         uses: actions/upload-artifact@v3
         if: ${{ env.useAnykernel == 'true' }}
         with:
           name: "${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}"
           path: AnyKernel3/*
 
-      - name: "Create GitHub Release => (${{ env.builddate }})"
+      - name: "Create GitHub Release"
         continue-on-error: true
         uses: softprops/action-gh-release@v1
         if: ${{ env.useAnykernel == 'true' && env.release == 'true' }}
