@@ -7,107 +7,142 @@ on:
   workflow_dispatch:
 
 jobs:
-  Set-repos:
-    name: "Parse repos.json"
-    runs-on: ubuntu-latest
-    outputs:
-      repos: ${{ steps.generate-matrix.outputs.repos }}
-      builddate: ${{ steps.generate-builddate.outputs.builddate }}
-    steps:
-      - name: "Checkout"
-        uses: actions/checkout@v3
-
-      - name: "Generate Matrix"
-        id: generate-matrix
-        run: |
-          echo "repos<<EOF" >> $GITHUB_OUTPUT
-          jq -s '[.[][]]' repos*.json >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      - name: "Set builddate"
-        id: generate-builddate
-        run: echo "builddate=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
-
   Build-Kernel:
     name: "Build kernel"
     runs-on: ubuntu-22.04
-    needs:
-      - Set-repos
-    strategy:
-      max-parallel: 4
-      fail-fast: false
-      matrix:
-        repos: ${{ fromJSON(needs.Set-repos.outputs.repos) }}
     env:
       WORKSPACE: ${{ github.workspace }}
-      builddate: "${{ needs.Set-repos.outputs.builddate }}"
       KERNEL_NAME: Nethunter_kernel_samsung_dm3q
       KERNEL_REPO: "https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q.git"
       KERNEL_BRANCH: "WIP"
       KERNEL_DEVICE: "samsung_dm3q"
       DEFCONFIG_NAME: "vendor/kalama-gki_defconfig"
-      withKernelSU: ${{ matrix.repos.withKernelSU }}
-      useAnykernel: ${{ matrix.repos.AnyKernel3.use }}
-      release: ${{ matrix.repos.AnyKernel3.release }}
+      withMagisk: true
+      useAnykernel: true
+      release: true
+
     steps:
       - name: "Install prerequisites"
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python2 python3 libarchive-tools
 
+      - name: "Set Build Date"
+        id: builddate
+        run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+
       - name: "Setup Anykernel3"
-        env:
-          params: "${{ toJSON(matrix.repos.AnyKernel3) }}"
         run: |
-          ANYKERNEL_REPO=$(echo $params | jq -r ".repo")
-          ANYKERNEL_BRANCH=$(echo $params | jq -r ".branch")
-          git clone --recursive --depth=1 -j $(nproc) --branch $ANYKERNEL_BRANCH $ANYKERNEL_REPO AnyKernel3
-          echo "Setup Anykernel3 => ($ANYKERNEL_REPO)"
+          git clone --recursive --depth=1 -j $(nproc) --branch master https://github.com/osm0sis/AnyKernel3 AnyKernel3
+          echo "Setup Anykernel3 => (https://github.com/osm0sis/AnyKernel3)"
 
       - name: "Clone kernel source => (${{ env.KERNEL_REPO }})"
         run: |
-          git clone --recursive --depth=1 -j $(nproc) --branch $KERNEL_BRANCH $KERNEL_REPO $KERNEL_NAME
-          echo "Clone kernel source => ($KERNEL_REPO)"
+          git clone --recursive --depth=1 -j $(nproc) --branch ${{ env.KERNEL_BRANCH }} ${{ env.KERNEL_REPO }} ${{ env.KERNEL_NAME }}
+          echo "Clone kernel source => (${{ env.KERNEL_REPO }})"
 
       - name: "Get toolchains"
-        env:
-          toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
         run: |
-          toolchains_num="$(echo $toolchains | jq 'length')"
-          echo "There are $toolchains_num defined toolchains."
-          for ((i=0;i<toolchains_num;i++)); do
-            toolchain_name=$(echo $toolchains | jq -r ".[$i].name")
-            toolchain_repo=$(echo $toolchains | jq -r ".[$i].repo")
-            toolchain_branch=$(echo $toolchains | jq -r ".[$i].branch")
-
-            git clone --recursive --depth=1 -j $(nproc) --branch $toolchain_branch $toolchain_repo $toolchain_name
-            echo "Clone $toolchain_name => ($toolchain_repo)"
-
-            jq -r ".[$i].binPath[] | tostring" <<< "$toolchains" | while read -r bin_path; do
-              echo "$WORKSPACE/$toolchain_name/$bin_path" >> $GITHUB_PATH
-            done
-          done
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchains/proton-clang
+          echo "Toolchains setup complete."
 
       - name: "Set args"
         id: generate-args
-        env:
-          params: "${{ toJSON(matrix.repos.params) }}"
-          THREAD: $(nproc --all)
         run: |
-          echo "PATH Variable: $PATH"
+          THREAD=$(nproc --all)
+          ARCH=arm64
+          CC=toolchains/proton-clang/bin/clang
+          args="-j${THREAD} O=${{ env.OUT_DIR }} ARCH=$ARCH CC=${{ env.WORKSPACE }}/$CC"
+          echo "args=$args" >> $GITHUB_OUTPUT
 
-          ARCH=$(echo $params | jq -r ".ARCH")
-          CC=$(echo $params | jq -r ".CC")
+      - name: "Update Magisk"
+        if: ${{ env.withMagisk }}
+        working-directory: ${{ env.KERNEL_NAME }}
+        env:
+          arch: arm64
+        run: |
+          # Remove any existing Magisk integration
+          if [ -d "./Magisk" ]; then
+            rm -rf "./Magisk"
+          fi
+          # Clone Magisk repository
+          git clone --depth=1 https://github.com/topjohnwu/Magisk.git
+          # Apply Magisk patches to the kernel
+          bash Magisk/scripts/boot.sh
 
-          args="-j${{ env.THREAD }}"
-          if [ -n "${{ env.OUT_DIR }}" ]; then
-            mkdir -p ${{ env.OUT_DIR }} && args="$args O=${{ env.OUT_DIR }}"
+          # Update the kernel config to support Magisk
+          echo -e "CONFIG_INITRAMFS_SOURCE=\"Magisk/magisk_init\"" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "CONFIG_SECURITY_SELINUX=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=1" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          cat arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+
+      - name: "Make defconfig"
+        working-directory: ${{ env.KERNEL_NAME }}
+        run: |
+          make ${{ steps.generate-args.outputs.args }} ${{ env.DEFCONFIG_NAME }}
+
+      - name: "Build kernel"
+        working-directory: ${{ env.KERNEL_NAME }}
+        run: |
+          make ${{ steps.generate-args.outputs.args }}
+
+      - name: "Upload Image"
+        uses: actions/upload-artifact@v3
+        if-no-files-found: ignore
+        with:
+          name: Image-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/Image
+          retention-days: 7
+
+      - name: "Upload Image.gz"
+        uses: actions/upload-artifact@v3
+        if-no-files-found: ignore
+        with:
+          name: Image.gz-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz
+          retention-days: 7
+
+      - name: "Upload dtb"
+        uses: actions/upload-artifact@v3
+        if-no-files-found: ignore
+        with:
+          name: dtb-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/dtb
+          retention-days: 7
+
+      - name: "Upload dtbo.img"
+        uses: actions/upload-artifact@v3
+        if-no-files-found: ignore
+        with:
+          name: dtbo.img-${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}-${{ env.builddate }}
+          path: ${{ env.OUT_DIR }}/arch/arm64/boot/dtbo.img
+          retention-days: 7
+
+      - name: "Pack AnyKernel3.zip"
+        if: ${{ env.useAnykernel }}
+        env:
+          anykernel: "${{ env.WORKSPACE }}/${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}"
+        run: |
+          ls -al
+          if [ -e "${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz-dtb" ]; then
+            cp -f ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz-dtb ./AnyKernel3/
           fi
-          if [ -n "$ARCH" ]; then
-            args="$args ARCH=$ARCH"
-          fi
-          if [ -n "$CC" ]; then
-            args="$args CC=${{ env.WORKSPACE }}/$CC"
-          fi
-          while read -r externalCommand; do
-            args="$args $externalCommand"
-          done < <(jq -r '.externalCommand | to_entries[] | "
+          cd AnyKernel3/
+          zip -q -r "${{ env.anykernel }}.zip" *
+
+      - name: "Upload AnyKernel3 image => (${{ env.builddate }})"
+        uses: actions/upload-artifact@v3
+        if: ${{ env.useAnykernel }}
+        with:
+          name: "${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}"
+          path: AnyKernel3/*
+
+      - name: "Create GitHub Release => (${{ env.builddate }})"
+        continue-on-error: true
+        uses: softprops/action-gh-release@v1
+        if: ${{ env.useAnykernel && env.release }}
+        with:
+          tag_name: v${{ env.builddate }}.${{ github.run_number }}
+          files: "${{ env.WORKSPACE }}/${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}.zip"
+          generate_release_notes: true
