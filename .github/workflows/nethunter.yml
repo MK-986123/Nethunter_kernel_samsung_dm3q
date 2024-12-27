@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       WORKSPACE: ${{ github.workspace }}
-      builddate: $(date +'%Y%m%d')
+      builddate: ${{ steps.date.outputs.date }}
       KERNEL_NAME: Nethunter_kernel_samsung_dm3q
       KERNEL_REPO: "https://github.com/MK-986123/Nethunter_kernel_samsung_dm3q.git"
       KERNEL_BRANCH: "WIP"
@@ -22,10 +22,15 @@ jobs:
       useAnykernel: true
       release: true
     steps:
+      - name: "Get build date"
+        id: date
+        run: echo "date=$(date +'%Y%m%d')" >> $GITHUB_ENV
+
       - name: "Install prerequisites"
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc flex bison libssl-dev curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi lftp zstd wget libfl-dev python2 python3 libarchive-tools libelf-dev libz-dev binutils-dev
+
       - name: "Setup Anykernel3"
         run: |
           git clone --recursive --depth=1 -j $(nproc) --branch master https://github.com/osm0sis/AnyKernel3 AnyKernel3
